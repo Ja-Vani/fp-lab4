@@ -2,38 +2,53 @@
 
 -export([main/2]).
 
-start_input(Pid, DataTable) ->
+start_input() ->
     case io:get_line("Write> ") of
         {error, _} ->
-            start_input(Pid, DataTable);
+            start_input();
         eof ->
             eof;
+        "\n"->
+            start_input();
         Line ->
             [CommandStr | Data] = string:tokens(Line, " \n"),
             Command = list_to_atom(CommandStr),
             case Command of
                 add ->
-                    Pid ! {add, {erlang:localtime(), Data}},
-                    start_input(Pid, DataTable);
+                    handler ! {add, {erlang:localtime(), {Data}}},
+                    start_input();
                 delete ->
-                    Pid ! {delete, {erlang:localtime(), Data}},
-                    start_input(Pid, DataTable);
+                    handler ! {delete, Data}, 
+                    start_input();
                 read ->
-                    List = ets:tab2list(DataTable),
-                    io:write(List),
-                    start_input(Pid, DataTable);
+                    handler ! {read, self()},
+                    receive
+                        {handler, List} ->
+                            io:format("~p\n", [List])
+                    end,
+                    start_input();
                 close ->
-                    Pid ! {close};
+                    handler ! {close};
+                info ->
+                    handler ! {info, self()},
+                    receive
+                        {handler, Node} ->
+                            io:format("Addr: ~w\nNode: ~w\n", [handler, Node])
+                    end,
+                    start_input();
+                nodes ->
+                    handler ! {node_info, self()},
+                    receive
+                        {handler, List} ->
+                            io:format("Addr: ~w\nNodes: ~p\n", [handler, List])
+                    end,
+                    start_input();
                 _ ->
-                    start_input(Pid, DataTable)
+                    start_input()
             end
     end.
 
 main(Addr, NodeName) ->
-    case net_info:init_node_addres(Addr, NodeName, node()) of
-        {not_active_user, NodeTable} ->
-            DataTable = main_handler:init_empty_data();
-        {NodeList, NodeTable} ->
-            DataTable = main_handler:init_data(NodeList, node())
-    end,
-    start_input(spawn(main_handler, handler, [NodeTable, DataTable]), DataTable).
+    Pid = spawn(main_handler, handler_init, [Addr, NodeName]),
+    register(handler, Pid),
+    start_input().

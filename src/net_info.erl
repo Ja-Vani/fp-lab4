@@ -3,13 +3,13 @@
 -export([init_node_addres/3, new_user/2, delete_user/2]).
 
 init_node_addres(Addr, Node, Myname) ->
-    Table = ets:new(nodes_table, [ordered_set, named_table, public]),
-    ets:insert(Table, {Myname, Addr}),
-    try {Addr, Node} ! {self(), all_node, Myname},
+    Table = ets:new(nodes_table, [ordered_set]),
+    ets:insert(Table, {Myname, handler}),
+    try {Addr, Node} ! {all_node, handler, Myname},
         receive
-            NodeList ->
-                {etc:insert(Table, NodeList), Table}
-        after 2000 ->
+            {handler, NodeList} ->
+                {ets:insert(Table, NodeList),Table }
+        after 5000  ->
             {not_active_user, Table}
         end
     catch
@@ -19,12 +19,16 @@ init_node_addres(Addr, Node, Myname) ->
 
 new_user([], _) ->
     ok;
-new_user([{Name, Addr} | NodeList], Node) ->
-    {Addr, Name} ! {add_user, Node},
+new_user([{Name, handler} | NodeList], Node) when Name /= node() ->
+    {handler, Name} ! {add_user, Node},
+    new_user(NodeList, Node);
+new_user([_ | NodeList], Node) ->
     new_user(NodeList, Node).
 
 delete_user([], _) ->
     ok;
-delete_user([{Name, Addr} | NodeList], Node) ->
-    {Addr, Name} ! {add_user, Node},
-    delete_user(NodeList, Node).
+delete_user([{Name, handler} | NodeList], Node) when Name /= node() ->
+    {handler, Name} ! {delete_user, Node},
+    delete_user(NodeList, Node);
+delete_user([_ | NodeList], Node) ->
+    new_user(NodeList, Node).
