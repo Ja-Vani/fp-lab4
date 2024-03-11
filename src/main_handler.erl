@@ -21,10 +21,9 @@ get_data_from_all([{Name, handler} | NodeList], List) when Name /= node() ->
         {get_data, NewList} ->
             NewList
     end,
-    get_data_from_all(NodeList, [NewList|List]);
+    get_data_from_all(NodeList, [NewList | List]);
 get_data_from_all([_ | NodeList], List) ->
     get_data_from_all(NodeList, List).
-
 
 handler(NodeTable, DataTable) ->
     NodeList = ets:tab2list(NodeTable),

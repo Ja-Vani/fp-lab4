@@ -5,15 +5,16 @@
 init_node_addres(Addr, Node, Myname) ->
     Table = ets:new(nodes_table, [ordered_set]),
     ets:insert(Table, {Myname, handler}),
-    try {Addr, Node} ! {all_node, handler, Myname},
+    try
+        {Addr, Node} ! {all_node, handler, Myname},
         receive
             {handler, NodeList} ->
-                {ets:insert(Table, NodeList),Table }
-        after 5000  ->
+                {ets:insert(Table, NodeList), Table}
+        after 5000 ->
             {not_active_user, Table}
         end
     catch
-        _:_ -> 
+        _:_ ->
             {not_active_user, Table}
     end.
 

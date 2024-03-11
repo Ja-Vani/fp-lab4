@@ -8,7 +8,7 @@ start_input() ->
             start_input();
         eof ->
             eof;
-        "\n"->
+        "\n" ->
             start_input();
         Line ->
             [CommandStr | Data] = string:tokens(Line, " \n"),
@@ -18,7 +18,7 @@ start_input() ->
                     handler ! {add, {erlang:localtime(), {Data}}},
                     start_input();
                 delete ->
-                    handler ! {delete, Data}, 
+                    handler ! {delete, Data},
                     start_input();
                 read ->
                     handler ! {read, self()},
