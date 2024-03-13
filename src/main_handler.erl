@@ -1,72 +1,59 @@
 -module(main_handler).
 
--export([handler_init/2]).
+-export([handler_init/0, set/2, get/1, info/0, nodes/0]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+         code_change/3]).
 
 init_empty_data() ->
     ets:new(data_table, [ordered_set]).
 
-send_all_node_delete([], _) ->
-    ok;
-send_all_node_delete([{Name, handler} | NodeList], Data) when Name /= node() ->
-    {handler, Name} ! {delete_from, Data},
-    send_all_node_delete(NodeList, Data);
-send_all_node_delete([_ | NodeList], Data) ->
-    send_all_node_delete(NodeList, Data).
+handle_cast({set, Key, Value}, {NodeTable, DataTable}) ->
+    ets:insert(DataTable, {Key, Value}),
+    {noreply, {NodeTable, DataTable}};
+handle_cast({add_node, Node}, {NodeTable, DataTable}) ->
+    Nodes = net_info:get_nodes(Node),
+    ets:insert(NodeTable, Nodes),
+    {noreply, {NodeTable, DataTable}}.
 
-get_data_from_all([], List) ->
-    List;
-get_data_from_all([{Name, handler} | NodeList], List) when Name /= node() ->
-    {handler, Name} ! {need_data, node()},
-    receive
-        {get_data, NewList} ->
-            NewList
-    end,
-    get_data_from_all(NodeList, [NewList | List]);
-get_data_from_all([_ | NodeList], List) ->
-    get_data_from_all(NodeList, List).
+handle_call({get, Key}, _From, {NodeTable, DataTable}) ->
+    List =
+        case ets:lookup(DataTable, Key) of
+            [] ->
+                node_reciver:get_data_from_nodes(Key, NodeTable);
+            Data ->
+                Data
+        end,
+    {reply, List, {NodeTable, DataTable}};
+handle_call({info}, _From, {NodeTable, DataTable}) ->
+    {reply, node(), {NodeTable, DataTable}};
+handle_call({nodes}, _From, {NodeTable, DataTable}) ->
+    {reply, ets:tab2list(NodeTable), {NodeTable, DataTable}}.
 
-handler(NodeTable, DataTable) ->
-    NodeList = ets:tab2list(NodeTable),
-    receive
-        {add, Data} ->
-            ets:insert(DataTable, Data),
-            handler(NodeTable, DataTable);
-        {delete, Key} ->
-            ets:delete(DataTable, Key),
-            send_all_node_delete(NodeList, Key),
-            handler(NodeTable, DataTable);
-        {delete_from, Key} ->
-            ets:delete(DataTable, Key),
-            handler(NodeTable, DataTable);
-        {all_node, handler, Myname} ->
-            {handler, Myname} ! {handler, NodeList},
-            net_info:new_user(NodeList, {Myname, handler}),
-            ets:insert(NodeTable, {Myname, handler}),
-            handler(NodeTable, DataTable);
-        {add_user, Node} ->
-            ets:insert(NodeTable, Node),
-            handler(NodeTable, DataTable);
-        {delete_user, Name} ->
-            ets:delete(NodeTable, Name),
-            handler(NodeTable, DataTable);
-        {close} ->
-            net_info:delete_user(NodeList, {node(), handler});
-        {info, Pid} ->
-            Pid ! {handler, node()},
-            handler(NodeTable, DataTable);
-        {node_info, Pid} ->
-            Pid ! {handler, NodeList},
-            handler(NodeTable, DataTable);
-        {read, Pid} ->
-            List = get_data_from_all(NodeList, ets:tab2list(DataTable)),
-            Pid ! {handler, List},
-            handler(NodeTable, DataTable);
-        {need_data, Name} ->
-            {handler, Name} ! {get_data, ets:tab2list(DataTable)},
-            handler(NodeTable, DataTable)
-    end.
+handler_init() ->
+    gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 
-handler_init(Addr, NodeName) ->
-    {_, NodeTable} = net_info:init_node_addres(Addr, NodeName, node()),
+set(Key, Value) ->
+    gen_server:cast({global, ?MODULE}, {set, Key, Value}).
+
+get(Key) ->
+    gen_server:call({global, ?MODULE}, {get, Key}).
+
+info() ->
+    gen_server:call(?MODULE, {info}).
+
+nodes() ->
+    gen_server:call(?MODULE, {nodes}).
+
+init([]) ->
+    {_, NodeTable} = net_info:init_node_addres(0, 0, node()),
     DataTable = init_empty_data(),
-    handler(NodeTable, DataTable).
+    {ok, {NodeTable, DataTable}}.
+
+handle_info(_Message, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVersion, State, _Extra) ->
+    {ok, State}.

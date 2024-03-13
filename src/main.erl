@@ -1,6 +1,7 @@
 -module(main).
 
--export([main/2]).
+-export([main/0, start_input/0]).
+-export([init/1]).
 
 start_input() ->
     case io:get_line("Write> ") of
@@ -15,40 +16,57 @@ start_input() ->
             Command = list_to_atom(CommandStr),
             case Command of
                 add ->
-                    handler ! {add, {erlang:localtime(), {Data}}},
+                    [Key | Value] = Data,
+                    main_handler:set(Key, Value),
                     start_input();
                 delete ->
-                    handler ! {delete, Data},
+                    main_handler:set(Data, []),
                     start_input();
                 read ->
-                    handler ! {read, self()},
-                    receive
-                        {handler, List} ->
-                            io:format("~p\n", [List])
-                    end,
+                    List = main_handler:get(Data),
+                    io:format("~p\n", [List]),
                     start_input();
                 close ->
-                    handler ! {close};
+                    reciver ! {close};
                 info ->
-                    handler ! {info, self()},
-                    receive
-                        {handler, Node} ->
-                            io:format("Addr: ~w\nNode: ~w\n", [handler, Node])
-                    end,
+                    List = main_handler:info(),
+                    io:format("Nodes: ~p\n", [List]),
                     start_input();
                 nodes ->
-                    handler ! {node_info, self()},
-                    receive
-                        {handler, List} ->
-                            io:format("Addr: ~w\nNodes: ~p\n", [handler, List])
-                    end,
+                    List = main_handler:nodes(),
+                    io:format("Nodes: ~p\n", [List]),
                     start_input();
                 _ ->
                     start_input()
             end
     end.
 
-main(Addr, NodeName) ->
-    Pid = spawn(main_handler, handler_init, [Addr, NodeName]),
-    register(handler, Pid),
-    start_input().
+main() ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+init(_Args) ->
+    SupervisorSpecification =
+        #{strategy => one_for_one,
+          intensity => 10,
+          period => 60},
+
+    ChildSpecifications =
+        [#{id => handler,
+           start => {main_handler, handler_init, []},
+           restart => permanent,
+           shutdown => 2000,
+           type => worker,
+           modules => [main_handler]},
+         #{id => handler,
+           start => {main, start_input, []},
+           restart => permanent,
+           shutdown => 2000,
+           type => worker,
+           modules => [main]},
+         #{id => reciver,
+           start => {node_reciver, reciver, []},
+           restart => permanent,
+           shutdown => 2000,
+           type => worker,
+           modules => [node_reciver]}],
+    {ok, {SupervisorSpecification, ChildSpecifications}}.
